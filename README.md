@@ -228,7 +228,7 @@ sudo ./engine start alpha rootfs-alpha /cpu_hog
 
 ---
 
-# ✨ Features Implemented
+#  Features Implemented
 
 ## ✔ Multi-container Supervision
 - Central supervisor managing multiple containers
@@ -259,7 +259,7 @@ engine ps
 
 ---
 
-# 📝 Notes
+#  Notes
 
 - AppArmor warnings in `dmesg` can be ignored  
 - Kernel module must be reloaded after reboot  
@@ -267,7 +267,7 @@ engine ps
 
 ---
 
-# ⚙️ CI Build 
+#  CI Build 
 
 ```bash
 make -C boilerplate ci
@@ -275,7 +275,7 @@ make -C boilerplate ci
 
 ---
 
-# 📌 Conclusion
+#  Conclusion
 
 This project demonstrates a full pipeline from:
 
