@@ -1,111 +1,285 @@
-# Multi-Container Runtime
+# Mini Container Runtime with Kernel Memory Monitor
 
-A lightweight Linux container runtime in C with a long-running supervisor and a kernel-space memory monitor.
+## 1. Team Information
 
-Read [`project-guide.md`](project-guide.md) for the full project specification.
+| Name | SRN |
+|------|-----|
+| Sufiya | PES1UG24CS919 |
+| Debangana | PES1UG24CS921 |
 
 ---
 
-## Getting Started
+## 2. Project Overview
 
-### 1. Fork the Repository
+This project implements a **minimal container runtime** with a **kernel-space memory monitoring module**.
 
-1. Go to [github.com/shivangjhalani/OS-Jackfruit](https://github.com/shivangjhalani/OS-Jackfruit)
-2. Click **Fork** (top-right)
-3. Clone your fork:
+It demonstrates:
+- Process isolation using Linux namespaces
+- Multi-container supervision
+- Inter-process communication (IPC) via FIFOs
+- Logging using a bounded-buffer producer-consumer model
+- Kernel-level memory monitoring using a Loadable Kernel Module (LKM)
+- Soft and hard memory limit enforcement
+- CPU scheduling behavior under contention
+- Clean teardown with no zombie processes
 
-```bash
-git clone https://github.com/<your-username>/OS-Jackfruit.git
-cd OS-Jackfruit
+---
+
+## 3. Repository Structure
+
+```
+.
+├── engine.c        # User-space runtime & supervisor
+├── monitor.c       # Kernel memory monitor (LKM)
+├── monitor_ioctl.h # Shared ioctl interface
+├── cpu_hog.c       # CPU workload generator
+├── memory_hog.c    # Memory workload generator
+├── io_pulse.c      # I/O workload (optional)
+├── Makefile        # Build system
+├── rootfs-base/    # Base filesystem
+├── rootfs-alpha/   # Container filesystem (copy)
+├── rootfs-beta/    # Container filesystem (copy)
+├── logs/           # Container logs
+└── README.md
 ```
 
-### 2. Set Up Your VM
+---
 
-You need an **Ubuntu 22.04 or 24.04** VM with **Secure Boot OFF**. WSL will not work.
+## 4. Build, Load, and Run Instructions
 
-Install dependencies:
+###  Environment
+- Ubuntu 22.04 / 24.04 VM
+- Linux kernel with headers installed
+- Root privileges required
+
+---
+
+#  Setup & Usage Guide
+
+##  Step 1: Build
 
 ```bash
-sudo apt update
-sudo apt install -y build-essential linux-headers-$(uname -r)
+make clean
+make
 ```
 
-### 3. Run the Environment Check
+This builds:
+- `engine` → user-space runtime  
+- `monitor.ko` → kernel module  
+- Workloads → `cpu_hog`, `memory_hog`
+
+---
+
+##  Step 2: Load Kernel Module
 
 ```bash
-cd boilerplate
-chmod +x environment-check.sh
-sudo ./environment-check.sh
+sudo insmod monitor.ko
 ```
 
-Fix any issues reported before moving on.
+Verify device:
+```bash
+ls -l /dev/container_monitor
+```
 
-### 4. Prepare the Root Filesystem
+Expected:
+```
+/dev/container_monitor
+```
+
+---
+
+##  Step 3: Start Supervisor
 
 ```bash
-mkdir rootfs-base
-wget https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.3-x86_64.tar.gz
-tar -xzf alpine-minirootfs-3.20.3-x86_64.tar.gz -C rootfs-base
+sudo ./engine supervisor rootfs-base
+```
 
-# Make one writable copy per container you plan to run
+---
+
+##  Step 4: Prepare Container RootFS
+
+```bash
 cp -a ./rootfs-base ./rootfs-alpha
 cp -a ./rootfs-base ./rootfs-beta
 ```
 
-Do not commit `rootfs-base/` or `rootfs-*` directories to your repository.
+---
 
-### 5. Understand the Boilerplate
+##  Step 5: Launch Containers
 
-The `boilerplate/` folder contains starter files:
-
-| File                   | Purpose                                             |
-| ---------------------- | --------------------------------------------------- |
-| `engine.c`             | User-space runtime and supervisor skeleton          |
-| `monitor.c`            | Kernel module skeleton                              |
-| `monitor_ioctl.h`      | Shared ioctl command definitions                    |
-| `Makefile`             | Build targets for both user-space and kernel module |
-| `cpu_hog.c`            | CPU-bound test workload                             |
-| `io_pulse.c`           | I/O-bound test workload                             |
-| `memory_hog.c`         | Memory-consuming test workload                      |
-| `environment-check.sh` | VM environment preflight check                      |
-
-Use these as your starting point. You are free to restructure the repository however you want — the submission requirements are listed in the project guide.
-
-### 6. Build and Verify
+Open another terminal:
 
 ```bash
-cd boilerplate
-make
+sudo ./engine start alpha rootfs-alpha /bin/sh
+sudo ./engine start beta rootfs-beta /bin/sh
 ```
 
-If this compiles without errors, your environment is ready.
+---
 
-### 7. GitHub Actions Smoke Check
+##  Step 6: List Containers
 
-Your fork will inherit a minimal GitHub Actions workflow from this repository.
+```bash
+sudo ./engine ps
+```
 
-That workflow only performs CI-safe checks:
+---
 
-- `make -C boilerplate ci`
-- user-space binary compilation (`engine`, `memory_hog`, `cpu_hog`, `io_pulse`)
-- `./boilerplate/engine` with no arguments must print usage and exit with a non-zero status
+##  Step 7: View Logs
 
-The CI-safe build command is:
+```bash
+ls logs
+cat logs/alpha.log
+```
+
+---
+
+##  Step 8: Memory Monitoring Demo
+
+Open a new terminal:
+
+```bash
+sudo dmesg -w
+```
+
+Run workload:
+
+```bash
+sudo ./engine start alpha rootfs-alpha /memory_hog
+```
+
+Expected output:
+```
+[container_monitor] Registered container=alpha ...
+[container_monitor] SOFT LIMIT ...
+[container_monitor] HARD LIMIT ...
+```
+
+---
+
+##  Step 9: Scheduling Experiment
+
+```bash
+sudo ./engine start alpha rootfs-alpha /cpu_hog
+sudo ./engine start beta rootfs-beta /cpu_hog
+```
+
+Then:
+
+```bash
+top
+```
+
+Expected:
+- CPU shared between multiple `cpu_hog` processes
+
+---
+
+##  Step 10: Stop Containers
+
+```bash
+sudo pkill -9 engine
+```
+
+Verify cleanup:
+
+```bash
+ps aux | grep cpu_hog
+```
+
+Expected:
+```
+(no running cpu_hog processes)
+```
+
+---
+
+##  Step 11: Inspect Kernel Logs
+
+```bash
+dmesg | tail
+```
+
+---
+
+##  Step 12: Unload Module
+
+```bash
+sudo rmmod monitor
+```
+
+---
+
+#  Running Workloads Inside Containers
+
+Before launching a container, copy binaries:
+
+```bash
+cp cpu_hog rootfs-alpha/
+cp memory_hog rootfs-alpha/
+chmod +x rootfs-alpha/cpu_hog
+chmod +x rootfs-alpha/memory_hog
+```
+
+Run:
+
+```bash
+sudo ./engine start alpha rootfs-alpha /cpu_hog
+```
+
+---
+
+# ✨ Features Implemented
+
+## ✔ Multi-container Supervision
+- Central supervisor managing multiple containers
+
+## ✔ Metadata Tracking
+- Track container state and PIDs via:
+```bash
+engine ps
+```
+
+## ✔ Logging System
+- Producer-consumer bounded buffer  
+- Per-container log files  
+
+## ✔ CLI + IPC
+- FIFO-based communication between CLI and supervisor  
+
+## ✔ Memory Monitoring (Kernel)
+- Soft limit warnings  
+- Hard limit enforcement (`SIGKILL`)  
+
+## ✔ Scheduling Demonstration
+- CPU contention across containers  
+
+## ✔ Clean Teardown
+- No zombie processes  
+- Proper resource cleanup  
+
+---
+
+# 📝 Notes
+
+- AppArmor warnings in `dmesg` can be ignored  
+- Kernel module must be reloaded after reboot  
+- Containers require root privileges (namespaces)
+
+---
+
+# ⚙️ CI Build 
 
 ```bash
 make -C boilerplate ci
 ```
 
-This smoke check does not test kernel-module loading, supervisor runtime behavior, or container execution.
-
 ---
 
-## What to Do Next
+# 📌 Conclusion
 
-Read [`project-guide.md`](project-guide.md) end to end. It contains:
+This project demonstrates a full pipeline from:
 
-- The six implementation tasks (multi-container runtime, CLI, logging, kernel monitor, scheduling experiments, cleanup)
-- The engineering analysis you must write
-- The exact submission requirements, including what your `README.md` must contain (screenshots, analysis, design decisions)
+- user-space container orchestration  
+- to kernel-level resource enforcement  
 
-Your fork's `README.md` should be replaced with your own project documentation as described in the submission package section of the project guide. (As in get rid of all the above content and replace with your README.md)
+Providing a simplified yet functional container runtime system.
